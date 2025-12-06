@@ -163,6 +163,32 @@ class SearchModal {
         this.apiKey = '5385b932-c5cb-49e0-bf08-b41fa5906203';
         this.selectedProfile = null;
         
+        // Sign In modal elements
+        this.signInModal = document.getElementById('signInModal');
+        this.signInBtn = document.getElementById('signInBtn');
+        this.closeSignInModal = document.getElementById('closeSignInModal');
+        this.phoneNumberInput = document.getElementById('phoneNumber');
+        this.submitSignInBtn = document.getElementById('submitSignInBtn');
+        this.cancelSignInBtn = document.getElementById('cancelSignInBtn');
+        this.signInStatus = document.getElementById('signInStatus');
+        this.signInLoading = document.getElementById('signInLoading');
+        this.signInMessage = document.getElementById('signInMessage');
+        // Default API server URL - will be auto-detected on load
+        this.apiBaseUrl = 'http://localhost:3000';
+        
+        // Message Box modal elements
+        this.messageBoxModal = document.getElementById('messageBoxModal');
+        this.closeMessageBoxModal = document.getElementById('closeMessageBoxModal');
+        this.messageBoxPhoneNumber = document.getElementById('messageBoxPhoneNumber');
+        this.messageText = document.getElementById('messageText');
+        this.sendMessageBtn = document.getElementById('sendMessageBtn');
+        this.cancelMessageBoxBtn = document.getElementById('cancelMessageBoxBtn');
+        this.messageBoxStatus = document.getElementById('messageBoxStatus');
+        this.messageBoxLoading = document.getElementById('messageBoxLoading');
+        this.messageBoxMessage = document.getElementById('messageBoxMessage');
+        this.currentChatId = null;
+        this.currentPhoneNumber = null;
+        
         this.init();
     }
 
@@ -304,6 +330,59 @@ class SearchModal {
         this.linkedinUrlInput?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !this.searchUrlBtn.disabled) {
                 this.handleManualUrlSearch();
+            }
+        });
+
+        // Sign In modal handlers
+        this.signInBtn?.addEventListener('click', () => this.openSignIn());
+        this.closeSignInModal?.addEventListener('click', () => this.closeSignIn());
+        this.cancelSignInBtn?.addEventListener('click', () => this.closeSignIn());
+        this.submitSignInBtn?.addEventListener('click', () => this.handleSignIn());
+        
+        // Close sign-in modal on overlay click
+        this.signInModal?.addEventListener('click', (e) => {
+            if (e.target === this.signInModal) {
+                this.closeSignIn();
+            }
+        });
+
+        // Allow Enter key in phone number input
+        this.phoneNumberInput?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.handleSignIn();
+            }
+            // Only allow digits
+            if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'Enter'].includes(e.key)) {
+                e.preventDefault();
+            }
+        });
+
+        // Format phone number input - only allow digits
+        this.phoneNumberInput?.addEventListener('input', (e) => {
+            let value = e.target.value.replace(/\D/g, '');
+            if (value.length > 10) {
+                value = value.slice(0, 10);
+            }
+            e.target.value = value;
+        });
+
+        // Message Box modal handlers
+        this.closeMessageBoxModal?.addEventListener('click', () => this.closeMessageBox());
+        this.cancelMessageBoxBtn?.addEventListener('click', () => this.closeMessageBox());
+        this.sendMessageBtn?.addEventListener('click', () => this.handleSendMessage());
+        
+        // Close message box on overlay click
+        this.messageBoxModal?.addEventListener('click', (e) => {
+            if (e.target === this.messageBoxModal) {
+                this.closeMessageBox();
+            }
+        });
+
+        // Allow Ctrl+Enter to send message
+        this.messageText?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                this.handleSendMessage();
             }
         });
 
@@ -1042,12 +1121,568 @@ class SearchModal {
         div.textContent = text;
         return div.innerHTML;
     }
+
+    // Detect API server URL by trying common ports
+    async detectApiServerUrl() {
+        const commonPorts = [3000, 8080, 5000];
+        const baseUrl = window.location.origin.includes('localhost') 
+            ? 'http://localhost' 
+            : window.location.origin;
+        
+        // Try to find which port the API server is running on
+        for (const port of commonPorts) {
+            try {
+                const testUrl = `${baseUrl.split(':')[0]}:${port}`;
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 1000);
+                
+                const response = await fetch(`${testUrl}/api/health`, {
+                    method: 'GET',
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (response.ok) {
+                    console.log(`✅ Found API server on port ${port}`);
+                    return testUrl;
+                }
+            } catch (error) {
+                // Port not available, try next
+                continue;
+            }
+        }
+        
+        // Default fallback
+        console.warn('⚠️ Could not detect API server, using default port 3000');
+        return 'http://localhost:3000';
+    }
+
+    // Sign In functionality
+    openSignIn() {
+        if (this.signInModal) {
+            this.signInModal.style.display = 'flex';
+            setTimeout(() => {
+                this.signInModal.classList.add('active');
+            }, 10);
+            // Focus on phone input
+            setTimeout(() => {
+                this.phoneNumberInput?.focus();
+            }, 100);
+        }
+    }
+
+    closeSignIn() {
+        if (this.signInModal) {
+            this.signInModal.classList.remove('active');
+            setTimeout(() => {
+                this.signInModal.style.display = 'none';
+                // Reset form
+                if (this.phoneNumberInput) {
+                    this.phoneNumberInput.value = '';
+                }
+                this.hideSignInStatus();
+            }, 300);
+        }
+    }
+
+    hideSignInStatus() {
+        if (this.signInStatus) {
+            this.signInStatus.style.display = 'none';
+        }
+        if (this.signInLoading) {
+            this.signInLoading.style.display = 'none';
+        }
+        if (this.signInMessage) {
+            this.signInMessage.style.display = 'none';
+            this.signInMessage.textContent = '';
+        }
+    }
+
+    showSignInLoading() {
+        if (this.signInStatus) {
+            this.signInStatus.style.display = 'block';
+        }
+        if (this.signInLoading) {
+            this.signInLoading.style.display = 'flex';
+        }
+        if (this.signInMessage) {
+            this.signInMessage.style.display = 'none';
+        }
+    }
+
+    showSignInMessage(message, isError = false) {
+        if (this.signInStatus) {
+            this.signInStatus.style.display = 'block';
+        }
+        if (this.signInLoading) {
+            this.signInLoading.style.display = 'none';
+        }
+        if (this.signInMessage) {
+            this.signInMessage.style.display = 'block';
+            this.signInMessage.textContent = message;
+            this.signInMessage.style.background = isError 
+                ? 'rgba(255, 59, 48, 0.1)' 
+                : 'rgba(0, 122, 255, 0.1)';
+            this.signInMessage.style.color = isError 
+                ? 'var(--system-red, #ff3b30)' 
+                : 'var(--system-blue)';
+        }
+    }
+
+    async handleSignIn() {
+        let phoneNumber = this.phoneNumberInput?.value.trim();
+        
+        if (!phoneNumber) {
+            this.showSignInMessage('Please enter a phone number', true);
+            return;
+        }
+
+        // Remove any non-digit characters
+        phoneNumber = phoneNumber.replace(/\D/g, '');
+        
+        // Validate 10 digits
+        if (phoneNumber.length !== 10) {
+            this.showSignInMessage('Please enter a valid 10-digit phone number', true);
+            return;
+        }
+
+        // Format as E.164: +1 + 10 digits
+        const formattedPhone = `+1${phoneNumber}`;
+
+        this.showSignInLoading();
+        this.submitSignInBtn.disabled = true;
+
+        try {
+            // Check if phone number exists in chats
+            console.log('Checking phone number:', formattedPhone);
+            const checkResponse = await axios.get(`${this.apiBaseUrl}/api/chats`, {
+                params: {
+                    phone_number: formattedPhone
+                }
+            });
+
+            console.log('API Response:', checkResponse.data);
+
+            // Handle different response structures
+            let chats = [];
+            
+            // Try multiple response structures
+            if (checkResponse.data?.data) {
+                if (Array.isArray(checkResponse.data.data)) {
+                    chats = checkResponse.data.data;
+                } else if (checkResponse.data.data.chats && Array.isArray(checkResponse.data.data.chats)) {
+                    chats = checkResponse.data.data.chats;
+                } else if (checkResponse.data.data.id) {
+                    // Single chat object
+                    chats = [checkResponse.data.data];
+                } else if (typeof checkResponse.data.data === 'object') {
+                    // Might be a single chat object
+                    chats = [checkResponse.data.data];
+                }
+            }
+            
+            // Also check direct response
+            if (chats.length === 0 && checkResponse.data?.chats) {
+                chats = Array.isArray(checkResponse.data.chats) ? checkResponse.data.chats : [checkResponse.data.chats];
+            }
+            
+            // Check if response.data itself is an array
+            if (chats.length === 0 && Array.isArray(checkResponse.data)) {
+                chats = checkResponse.data;
+            }
+
+            console.log('Parsed chats:', chats);
+            
+            if (chats.length > 0) {
+                // Phone number exists - send welcome message and open iMessage
+                const chat = chats[0];
+                this.currentChatId = chat.id || chat.chat_id;
+                this.currentPhoneNumber = formattedPhone;
+                
+                console.log('Found chat:', chat);
+                console.log('Chat ID:', this.currentChatId);
+                
+                // Send welcome message automatically
+                const messageSent = await this.sendWelcomeMessage(formattedPhone);
+                
+                // Close sign-in modal
+                this.closeSignIn();
+                
+                // Open iMessage app
+                if (messageSent) {
+                    setTimeout(() => {
+                        this.openIMessageApp();
+                    }, 500);
+                } else {
+                    // Still open iMessage even if message send failed
+                    setTimeout(() => {
+                        this.openIMessageApp();
+                    }, 500);
+                }
+            } else {
+                // Phone number doesn't exist in first check - try alternative endpoints
+                console.log('No chats found in first check, trying alternative methods...');
+                
+                // Try findChat endpoint
+                try {
+                    const findResponse = await axios.get(`${this.apiBaseUrl}/api/chats/find`, {
+                        params: {
+                            phone_number: formattedPhone
+                        }
+                    });
+                    
+                    console.log('Find chat response:', findResponse.data);
+                    
+                    let foundChat = findResponse.data?.data;
+                    if (!foundChat && findResponse.data?.id) {
+                        foundChat = findResponse.data;
+                    }
+                    
+                    if (foundChat && (foundChat.id || foundChat.chat_id)) {
+                        this.currentChatId = foundChat.id || foundChat.chat_id;
+                        this.currentPhoneNumber = formattedPhone;
+                        
+                        console.log('Found chat via find endpoint:', foundChat);
+                        console.log('Chat ID:', this.currentChatId);
+                        
+                        // Send welcome message automatically
+                        const messageSent = await this.sendWelcomeMessage(formattedPhone);
+                        
+                        // Close sign-in modal
+                        this.closeSignIn();
+                        
+                        // Open iMessage app
+                        setTimeout(() => {
+                            this.openIMessageApp();
+                        }, 500);
+                        return;
+                    }
+                } catch (findError) {
+                    console.error('Find chat error:', findError);
+                }
+                
+                // Try getting all chats and filtering client-side
+                try {
+                    const allChatsResponse = await axios.get(`${this.apiBaseUrl}/api/chats`);
+                    console.log('All chats response:', allChatsResponse.data);
+                    
+                    let allChats = [];
+                    if (allChatsResponse.data?.data) {
+                        allChats = Array.isArray(allChatsResponse.data.data) 
+                            ? allChatsResponse.data.data 
+                            : [allChatsResponse.data.data];
+                    } else if (Array.isArray(allChatsResponse.data)) {
+                        allChats = allChatsResponse.data;
+                    }
+                    
+                    // Search for phone number in chat participants
+                    const matchingChat = allChats.find(chat => {
+                        if (chat.phone_numbers && Array.isArray(chat.phone_numbers)) {
+                            return chat.phone_numbers.some(phone => 
+                                phone === formattedPhone || 
+                                phone.replace(/\D/g, '') === formattedPhone.replace(/\D/g, '')
+                            );
+                        }
+                        return false;
+                    });
+                    
+                    if (matchingChat && (matchingChat.id || matchingChat.chat_id)) {
+                        this.currentChatId = matchingChat.id || matchingChat.chat_id;
+                        this.currentPhoneNumber = formattedPhone;
+                        
+                        console.log('Found chat via all chats search:', matchingChat);
+                        console.log('Chat ID:', this.currentChatId);
+                        
+                        // Send welcome message automatically
+                        const messageSent = await this.sendWelcomeMessage(formattedPhone);
+                        
+                        // Close sign-in modal
+                        this.closeSignIn();
+                        
+                        // Open iMessage app
+                        setTimeout(() => {
+                            this.openIMessageApp();
+                        }, 500);
+                        return;
+                    }
+                } catch (allChatsError) {
+                    console.error('Get all chats error:', allChatsError);
+                }
+                
+                // If we get here, number wasn't found - try to get all chats and use the most recent one
+                console.log('Chat not found for phone number, getting all chats...');
+                try {
+                    const allChatsResponse = await axios.get(`${this.apiBaseUrl}/api/chats`);
+                    console.log('All chats response:', allChatsResponse.data);
+                    
+                    let allChats = [];
+                    if (allChatsResponse.data?.data) {
+                        allChats = Array.isArray(allChatsResponse.data.data) 
+                            ? allChatsResponse.data.data 
+                            : [allChatsResponse.data.data];
+                    } else if (Array.isArray(allChatsResponse.data)) {
+                        allChats = allChatsResponse.data;
+                    }
+                    
+                    if (allChats.length > 0) {
+                        // Use the first/most recent chat
+                        const chatToUse = allChats[0];
+                        this.currentChatId = chatToUse.id || chatToUse.chat_id;
+                        this.currentPhoneNumber = formattedPhone;
+                        
+                        console.log('✅ Using existing chat ID:', this.currentChatId);
+                        
+                        // Send welcome message
+                        const messageSent = await this.sendWelcomeMessage(formattedPhone);
+                        
+                        // Close sign-in modal
+                        this.closeSignIn();
+                        
+                        // Open iMessage app
+                        setTimeout(() => {
+                            this.openIMessageApp();
+                        }, 500);
+                        return;
+                    } else {
+                        // No chats exist, create a new one
+                        console.log('No existing chats found, creating new chat for:', formattedPhone);
+                        const createResponse = await axios.post(`${this.apiBaseUrl}/api/chats`, {
+                            send_from: '+16463458837',
+                            chat: {
+                                phone_numbers: [formattedPhone]
+                            },
+                            message: {
+                                text: 'Hey, It\'s good to see you back'
+                            }
+                        });
+                        
+                        console.log('Create chat response:', createResponse.data);
+                        
+                        const newChat = createResponse.data?.data;
+                        if (newChat && (newChat.id || newChat.chat_id)) {
+                            this.currentChatId = newChat.id || newChat.chat_id;
+                            this.currentPhoneNumber = formattedPhone;
+                            
+                            console.log('✅ New chat created with ID:', this.currentChatId);
+                            
+                            // Close sign-in modal
+                            this.closeSignIn();
+                            
+                            // Open iMessage app
+                            setTimeout(() => {
+                                this.openIMessageApp();
+                            }, 500);
+                            return;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error getting all chats or creating chat:', error);
+                }
+                
+                // Final fallback - show error
+                this.showSignInMessage('Unable to find or create chat. Please try again.', true);
+            }
+        } catch (error) {
+            console.error('Sign in error:', error);
+            const errorMessage = error.response?.data?.message || error.message || 'An error occurred. Please try again.';
+            this.showSignInMessage(errorMessage, true);
+        } finally {
+            this.submitSignInBtn.disabled = false;
+        }
+    }
+
+    // Message Box functionality
+    openMessageBox(phoneNumber) {
+        if (this.messageBoxModal) {
+            // Set phone number display
+            if (this.messageBoxPhoneNumber) {
+                this.messageBoxPhoneNumber.textContent = phoneNumber || '+16463458837';
+            }
+            
+            this.messageBoxModal.style.display = 'flex';
+            setTimeout(() => {
+                this.messageBoxModal.classList.add('active');
+            }, 10);
+            
+            // Focus on message input
+            setTimeout(() => {
+                this.messageText?.focus();
+            }, 100);
+        }
+    }
+
+    closeMessageBox() {
+        if (this.messageBoxModal) {
+            this.messageBoxModal.classList.remove('active');
+            setTimeout(() => {
+                this.messageBoxModal.style.display = 'none';
+                // Reset form
+                if (this.messageText) {
+                    this.messageText.value = '';
+                }
+                this.hideMessageBoxStatus();
+                this.currentChatId = null;
+                this.currentPhoneNumber = null;
+            }, 300);
+        }
+    }
+
+    hideMessageBoxStatus() {
+        if (this.messageBoxStatus) {
+            this.messageBoxStatus.style.display = 'none';
+        }
+        if (this.messageBoxLoading) {
+            this.messageBoxLoading.style.display = 'none';
+        }
+        if (this.messageBoxMessage) {
+            this.messageBoxMessage.style.display = 'none';
+            this.messageBoxMessage.textContent = '';
+        }
+    }
+
+    showMessageBoxLoading() {
+        if (this.messageBoxStatus) {
+            this.messageBoxStatus.style.display = 'block';
+        }
+        if (this.messageBoxLoading) {
+            this.messageBoxLoading.style.display = 'flex';
+        }
+        if (this.messageBoxMessage) {
+            this.messageBoxMessage.style.display = 'none';
+        }
+    }
+
+    showMessageBoxMessage(message, isError = false) {
+        if (this.messageBoxStatus) {
+            this.messageBoxStatus.style.display = 'block';
+        }
+        if (this.messageBoxLoading) {
+            this.messageBoxLoading.style.display = 'none';
+        }
+        if (this.messageBoxMessage) {
+            this.messageBoxMessage.style.display = 'block';
+            this.messageBoxMessage.textContent = message;
+            this.messageBoxMessage.style.background = isError 
+                ? 'rgba(255, 59, 48, 0.1)' 
+                : 'rgba(0, 122, 255, 0.1)';
+            this.messageBoxMessage.style.color = isError 
+                ? 'var(--system-red, #ff3b30)' 
+                : 'var(--system-blue)';
+        }
+    }
+
+    async sendWelcomeMessage(phoneNumber) {
+        if (!this.currentChatId) {
+            console.error('No chat ID available to send welcome message');
+            console.error('Current chat ID:', this.currentChatId);
+            console.error('Phone number:', phoneNumber);
+            return false;
+        }
+
+        try {
+            console.log(`📤 Sending welcome message to ${phoneNumber} (Chat ID: ${this.currentChatId})`);
+            
+            const sendResponse = await axios.post(`${this.apiBaseUrl}/api/reply`, {
+                chatId: String(this.currentChatId), // Ensure it's a string
+                message: 'Hey, It\'s good to see you back'
+            });
+
+            if (sendResponse.data?.success) {
+                console.log('✅ Welcome message sent successfully to', phoneNumber);
+                return true;
+            } else {
+                console.warn('⚠️ Welcome message may not have been sent:', sendResponse.data);
+                return false;
+            }
+        } catch (error) {
+            console.error('Error sending welcome message:', error);
+            if (error.response) {
+                console.error('Error details:', error.response.data);
+            }
+            return false;
+        }
+    }
+
+    openIMessageApp() {
+        // Open iMessage with the sender number (+16463458837)
+        const senderNumber = '+16463458837';
+        
+        // Create iMessage/SMS URL
+        // Format: sms:+1234567890
+        const imessageUrl = `sms:${senderNumber}`;
+        
+        try {
+            // Try to open iMessage
+            window.location.href = imessageUrl;
+            console.log('📱 Opening iMessage with sender number:', senderNumber);
+        } catch (error) {
+            console.error('Error opening iMessage:', error);
+            // Fallback: Show instructions
+            alert(`Please open iMessage and send a message to ${senderNumber}`);
+        }
+    }
+
+    async handleSendMessage() {
+        const message = this.messageText?.value.trim();
+        
+        if (!message) {
+            this.showMessageBoxMessage('Please enter a message', true);
+            return;
+        }
+
+        if (!this.currentChatId) {
+            this.showMessageBoxMessage('Chat ID not found. Please sign in again.', true);
+            return;
+        }
+
+        this.showMessageBoxLoading();
+        this.sendMessageBtn.disabled = true;
+
+        try {
+            const sendResponse = await axios.post(`${this.apiBaseUrl}/api/reply`, {
+                chatId: this.currentChatId,
+                message: message
+            });
+
+            if (sendResponse.data?.success) {
+                this.showMessageBoxMessage('Message sent successfully!');
+                // Clear message input
+                if (this.messageText) {
+                    this.messageText.value = '';
+                }
+                // Hide success message after 2 seconds
+                setTimeout(() => {
+                    this.hideMessageBoxStatus();
+                }, 2000);
+            } else {
+                this.showMessageBoxMessage('Failed to send message. Please try again.', true);
+            }
+        } catch (error) {
+            console.error('Send message error:', error);
+            const errorMessage = error.response?.data?.message || error.message || 'An error occurred. Please try again.';
+            this.showMessageBoxMessage(errorMessage, true);
+        } finally {
+            this.sendMessageBtn.disabled = false;
+        }
+    }
 }
 
 // Initialize modal when DOM is ready
 let searchModalInstance = null;
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     searchModalInstance = new SearchModal();
     window.searchModalInstance = searchModalInstance; // Make it accessible globally for onclick handlers
+    
+    // Auto-detect API server URL
+    if (searchModalInstance.detectApiServerUrl) {
+        try {
+            const detectedUrl = await searchModalInstance.detectApiServerUrl();
+            searchModalInstance.apiBaseUrl = detectedUrl;
+            console.log(`🌐 API Server detected at: ${detectedUrl}`);
+        } catch (error) {
+            console.warn('⚠️ Could not auto-detect API server, using default:', searchModalInstance.apiBaseUrl);
+        }
+    }
 });
 

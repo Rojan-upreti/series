@@ -356,6 +356,35 @@ app.get('/api/chats', async (req, res) => {
   }
 });
 
+/**
+ * Create chat
+ * POST /api/chats
+ */
+app.post('/api/chats', async (req, res) => {
+  try {
+    if (!apiClient) {
+      return res.status(503).json({
+        error: 'API client not initialized',
+        message: 'Please configure SERIES_API_KEY and SERIES_API_BASE_URL environment variables',
+      });
+    }
+
+    const response = await apiClient.createChat(req.body);
+
+    res.json({
+      success: true,
+      data: response.data,
+    });
+  } catch (error) {
+    console.error('Error creating chat:', error);
+    res.status(error.status || 500).json({
+      error: 'Failed to create chat',
+      message: error.message,
+      details: error.data,
+    });
+  }
+});
+
 // ==================== WebSocket Connection ====================
 
 wss.on('connection', (ws) => {
