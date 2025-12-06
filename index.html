@@ -7,6 +7,116 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <script>
+        // Global protection against browser extension interference
+        // This must run IMMEDIATELY before any other scripts
+        (function() {
+            'use strict';
+            
+            // Define control property on HTMLInputElement and HTMLTextAreaElement prototypes
+            // This ensures ALL inputs have the property, even before they're created
+            try {
+                if (HTMLInputElement && HTMLInputElement.prototype) {
+                    Object.defineProperty(HTMLInputElement.prototype, 'control', {
+                        value: null,
+                        writable: true,
+                        configurable: true,
+                        enumerable: false
+                    });
+                }
+                if (HTMLTextAreaElement && HTMLTextAreaElement.prototype) {
+                    Object.defineProperty(HTMLTextAreaElement.prototype, 'control', {
+                        value: null,
+                        writable: true,
+                        configurable: true,
+                        enumerable: false
+                    });
+                }
+            } catch (e) {
+                console.warn('Could not define control on prototypes:', e);
+            }
+            
+            // Protect all input fields from extension errors
+            function protectInputs() {
+                const inputs = document.querySelectorAll('input, textarea');
+                inputs.forEach(input => {
+                    try {
+                        // Always set control property, even if it exists
+                        Object.defineProperty(input, 'control', {
+                            value: null,
+                            writable: true,
+                            configurable: true,
+                            enumerable: false
+                        });
+                    } catch (e) {
+                        // Ignore if property can't be defined
+                    }
+                });
+            }
+
+            // Run immediately - don't wait for DOM
+            protectInputs();
+
+            // Run on DOM ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', protectInputs);
+            } else {
+                protectInputs();
+            }
+
+            // Watch for new inputs added dynamically
+            const observer = new MutationObserver(() => {
+                protectInputs();
+            });
+
+            if (document.body) {
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                });
+            } else {
+                document.addEventListener('DOMContentLoaded', () => {
+                    observer.observe(document.body, {
+                        childList: true,
+                        subtree: true
+                    });
+                });
+            }
+
+            // Protect on ALL events that extensions might use
+            const events = ['focusin', 'focus', 'input', 'click', 'mousedown', 'touchstart'];
+            events.forEach(eventType => {
+                document.addEventListener(eventType, (e) => {
+                    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+                        try {
+                            Object.defineProperty(e.target, 'control', {
+                                value: null,
+                                writable: true,
+                                configurable: true,
+                                enumerable: false
+                            });
+                        } catch (err) {
+                            // Ignore
+                        }
+                    }
+                }, true); // Use capture phase to run before extensions
+            });
+            
+            // Also intercept property access attempts
+            const originalGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+            Object.getOwnPropertyDescriptor = function(obj, prop) {
+                if (prop === 'control' && (obj instanceof HTMLInputElement || obj instanceof HTMLTextAreaElement)) {
+                    return {
+                        value: null,
+                        writable: true,
+                        configurable: true,
+                        enumerable: false
+                    };
+                }
+                return originalGetOwnPropertyDescriptor.call(this, obj, prop);
+            };
+        })();
+    </script>
 </head>
 <body>
     <nav class="navbar">
@@ -97,6 +207,9 @@
                                 class="search-input" 
                                 placeholder="Enter name to search"
                                 autocomplete="off"
+                                data-lpignore="true"
+                                data-form-type="other"
+                                data-1p-ignore="true"
                             />
                         </div>
                     </div>
@@ -132,6 +245,9 @@
                                         class="search-input" 
                                         placeholder="https://linkedin.com/in/yourname"
                                         autocomplete="off"
+                                        data-lpignore="true"
+                                        data-1p-ignore="true"
+                                        data-form-type="other"
                                     />
                                 </div>
                             </div>
@@ -165,15 +281,27 @@
                         </div>
 
                         <div class="profile-detail-body">
-                            <div class="age-verification">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="ageVerification" class="age-checkbox">
-                                    <span class="checkbox-custom"></span>
-                                    <span class="checkbox-text">I confirm that I am 18 years or older</span>
-                                </label>
+                            <div class="phone-verification">
+                                <p class="verification-text">Please enter your phone number for verification</p>
+                                <div class="input-group" style="margin-top: 16px;">
+                                    <label for="profilePhoneNumber">Phone Number</label>
+                                    <div class="input-wrapper" style="display: flex; align-items: center;">
+                                        <span style="padding: 0 var(--spacing-sm); color: var(--text-secondary); font-size: 15px; user-select: none;">+1</span>
+                                        <input 
+                                            type="tel" 
+                                            id="profilePhoneNumber" 
+                                            class="search-input" 
+                                            placeholder="1234567890"
+                                            autocomplete="tel"
+                                            maxlength="10"
+                                            style="flex: 1; border-left: 1px solid var(--border-color); padding-left: var(--spacing-sm);"
+                                        />
+                                    </div>
+                                    <p class="input-hint" style="font-size: 12px; color: var(--text-tertiary); margin-top: 8px;">Enter your 10-digit phone number</p>
+                                </div>
                             </div>
 
-                            <button class="btn-imessage" id="openIMessageBtn" disabled>
+                            <button class="btn-imessage" id="openIMessageBtn">
                                 <svg class="imessage-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                                     <path d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                     <path d="M7 9H17M7 13H15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -185,8 +313,121 @@
                 </div>
 
                 <div class="modal-footer">
+                    <button class="create-manually-link" id="createManuallyBtn">Create Manually</button>
                     <button class="btn-secondary" id="cancelBtn">Cancel</button>
                     <button class="btn-primary" id="searchBtn">Search</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Manually Modal -->
+    <div class="modal-overlay" id="createManuallyModal" style="display: none;">
+        <div class="modal-container">
+            <div class="modal-content">
+                <button class="modal-close" id="closeCreateManuallyModal" aria-label="Close modal">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 4L4 12M4 4L12 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                
+                <div class="modal-header">
+                    <div class="search-icon-wrapper">
+                        <svg class="search-icon" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M16 7C16 9.20914 14.2091 11 12 11C9.79086 11 8 9.20914 8 7C8 4.79086 9.79086 3 12 3C14.2091 3 16 4.79086 16 7Z" stroke="currentColor" stroke-width="2"/>
+                            <path d="M12 14C8.13401 14 5 17.134 5 21H19C19 17.134 15.866 14 12 14Z" stroke="currentColor" stroke-width="2"/>
+                        </svg>
+                    </div>
+                    <h2 class="modal-title">Create Profile Manually</h2>
+                    <p class="modal-subtitle">Enter your information to create your profile</p>
+                </div>
+
+                <div class="modal-body">
+                    <div class="input-group">
+                        <label for="firstName">First Name</label>
+                        <div class="input-wrapper">
+                            <input 
+                                type="text" 
+                                id="firstName" 
+                                class="search-input" 
+                                placeholder="Enter your first name"
+                                autocomplete="off"
+                                data-lpignore="true"
+                                data-1p-ignore="true"
+                                data-form-type="other"
+                                data-browser-extension-ignore="true"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="input-group" style="margin-top: 16px;">
+                        <label for="lastName">Last Name</label>
+                        <div class="input-wrapper">
+                            <input 
+                                type="text" 
+                                id="lastName" 
+                                class="search-input" 
+                                placeholder="Enter your last name"
+                                autocomplete="off"
+                                data-lpignore="true"
+                                data-1p-ignore="true"
+                                data-form-type="other"
+                                data-browser-extension-ignore="true"
+                            />
+                        </div>
+                    </div>
+
+                    <div class="input-group" style="margin-top: 16px;">
+                        <label for="bio">Bio</label>
+                        <div class="input-wrapper">
+                            <textarea 
+                                id="bio" 
+                                class="search-input" 
+                                placeholder="Tell us about yourself..."
+                                rows="3"
+                                style="resize: vertical; min-height: 80px;"
+                                autocomplete="off"
+                                data-lpignore="true"
+                                data-1p-ignore="true"
+                                data-form-type="other"
+                                data-browser-extension-ignore="true"
+                            ></textarea>
+                        </div>
+                    </div>
+
+                    <div class="input-group" style="margin-top: 16px;">
+                        <label for="manualPhoneNumber">Phone Number</label>
+                        <div class="input-wrapper" style="display: flex; align-items: center;">
+                            <span style="padding: 0 var(--spacing-sm); color: var(--text-secondary); font-size: 15px; user-select: none;">+1</span>
+                            <input 
+                                type="tel" 
+                                id="manualPhoneNumber" 
+                                class="search-input" 
+                                placeholder="1234567890"
+                                autocomplete="off"
+                                maxlength="10"
+                                data-lpignore="true"
+                                data-1p-ignore="true"
+                                data-form-type="other"
+                                data-browser-extension-ignore="true"
+                                style="flex: 1; border-left: 1px solid var(--border-color); padding-left: var(--spacing-sm);"
+                            />
+                        </div>
+                        <p class="input-hint" style="font-size: 12px; color: var(--text-tertiary); margin-top: 8px;">Enter your 10-digit phone number</p>
+                    </div>
+
+                    <div id="createManuallyStatus" style="display: none; margin-top: 20px;">
+                        <div class="result-loading" id="createManuallyLoading" style="display: none;">
+                            <div class="loading-spinner"></div>
+                            <p>Saving...</p>
+                        </div>
+                        <div id="createManuallyMessage" style="display: none; padding: 16px; border-radius: 12px; background: rgba(0, 122, 255, 0.1); color: var(--system-blue);"></div>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button class="btn-secondary" id="cancelCreateManuallyBtn" type="button">Cancel</button>
+                    <button class="btn-primary" id="submitCreateManuallyBtn" type="button" data-browser-extension-ignore="true">Create Profile</button>
                 </div>
             </div>
         </div>
@@ -301,6 +542,41 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getAnalytics } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics.js';
+        import { getFirestore, collection, addDoc, doc, setDoc, query, where, getDocs, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+        
+        const firebaseConfig = {
+            apiKey: "AIzaSyBsoXFwCpPWCWo_FadssX_azhJnRaReSzg",
+            authDomain: "allinonehrm.firebaseapp.com",
+            projectId: "allinonehrm",
+            storageBucket: "allinonehrm.firebasestorage.app",
+            messagingSenderId: "1087467621387",
+            appId: "1:1087467621387:web:fa009cd0144ed37cb8cb0e",
+            measurementId: "G-W3SHH2Y9GE"
+        };
+        
+        const app = initializeApp(firebaseConfig);
+        const analytics = getAnalytics(app);
+        const db = getFirestore(app);
+        
+        // Make Firebase available globally
+        window.firebase = { 
+            db, 
+            collection, 
+            addDoc, 
+            doc, 
+            setDoc,
+            query,
+            where,
+            getDocs,
+            serverTimestamp 
+        };
+        
+        console.log('✅ Firebase initialized');
+    </script>
     <script src="script.js"></script>
 </body>
 </html>

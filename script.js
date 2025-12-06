@@ -61,26 +61,28 @@ window.addEventListener('scroll', () => {
     lastScroll = currentScroll;
 });
 
-// Button click handlers
-document.querySelectorAll('.btn-primary, .btn-secondary, .nav-button').forEach(button => {
-    button.addEventListener('click', function(e) {
-        // Create ripple effect
-        const ripple = document.createElement('span');
-        const rect = this.getBoundingClientRect();
-        const size = Math.max(rect.width, rect.height);
-        const x = e.clientX - rect.left - size / 2;
-        const y = e.clientY - rect.top - size / 2;
-        
-        ripple.style.width = ripple.style.height = size + 'px';
-        ripple.style.left = x + 'px';
-        ripple.style.top = y + 'px';
-        ripple.classList.add('ripple');
-        
-        this.appendChild(ripple);
-        
-        setTimeout(() => {
-            ripple.remove();
-        }, 600);
+// Button click handlers - moved to DOMContentLoaded to ensure proper initialization
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.btn-primary, .btn-secondary, .nav-button').forEach(button => {
+        button.addEventListener('click', function(e) {
+            // Create ripple effect
+            const ripple = document.createElement('span');
+            const rect = this.getBoundingClientRect();
+            const size = Math.max(rect.width, rect.height);
+            const x = e.clientX - rect.left - size / 2;
+            const y = e.clientY - rect.top - size / 2;
+            
+            ripple.style.width = ripple.style.height = size + 'px';
+            ripple.style.left = x + 'px';
+            ripple.style.top = y + 'px';
+            ripple.classList.add('ripple');
+            
+            this.appendChild(ripple);
+            
+            setTimeout(() => {
+                ripple.remove();
+            }, 600);
+        });
     });
 });
 
@@ -152,7 +154,7 @@ class SearchModal {
         this.profileDetailTitle = document.getElementById('profileDetailTitle');
         this.profileDetailLink = document.getElementById('profileDetailLink');
         this.closeProfileDetailBtn = document.getElementById('closeProfileDetail');
-        this.ageVerification = document.getElementById('ageVerification');
+        this.profilePhoneNumberInput = document.getElementById('profilePhoneNumber');
         this.openIMessageBtn = document.getElementById('openIMessageBtn');
         this.manualUrlContainer = document.getElementById('manualUrlContainer');
         this.linkedinUrlInput = document.getElementById('linkedinUrl');
@@ -160,8 +162,11 @@ class SearchModal {
         this.searchUrlBtn = document.getElementById('searchUrlBtn');
         this.showManualUrlBtnPersistent = document.getElementById('showManualUrlBtnPersistent');
         this.getStartedButtons = document.querySelectorAll('.btn-primary, .nav-button');
-        this.apiKey = '5385b932-c5cb-49e0-bf08-b41fa5906203';
+        this.apiKey = 'afab492a-a163-430e-98f3-15eb248e3453';
         this.selectedProfile = null;
+        
+        // Kafka/Series phone number - used for receiving messages
+        this.kafkaPhoneNumber = '+16463458837';
         
         // Sign In modal elements
         this.signInModal = document.getElementById('signInModal');
@@ -174,7 +179,7 @@ class SearchModal {
         this.signInLoading = document.getElementById('signInLoading');
         this.signInMessage = document.getElementById('signInMessage');
         // Default API server URL - will be auto-detected on load
-        this.apiBaseUrl = 'http://localhost:3000';
+        this.apiBaseUrl = 'http://localhost:8000';
         
         // Message Box modal elements
         this.messageBoxModal = document.getElementById('messageBoxModal');
@@ -189,17 +194,66 @@ class SearchModal {
         this.currentChatId = null;
         this.currentPhoneNumber = null;
         
+        // Create Manually modal elements
+        this.createManuallyBtn = document.getElementById('createManuallyBtn');
+        this.createManuallyModal = document.getElementById('createManuallyModal');
+        this.closeCreateManuallyModal = document.getElementById('closeCreateManuallyModal');
+        this.cancelCreateManuallyBtn = document.getElementById('cancelCreateManuallyBtn');
+        this.submitCreateManuallyBtn = document.getElementById('submitCreateManuallyBtn');
+        this.firstNameInput = document.getElementById('firstName');
+        this.lastNameInput = document.getElementById('lastName');
+        this.bioInput = document.getElementById('bio');
+        this.manualPhoneNumberInput = document.getElementById('manualPhoneNumber');
+        this.createManuallyStatus = document.getElementById('createManuallyStatus');
+        this.createManuallyLoading = document.getElementById('createManuallyLoading');
+        this.createManuallyMessage = document.getElementById('createManuallyMessage');
+        
         this.init();
     }
 
     init() {
         // Open modal when Get Started is clicked
         this.getStartedButtons.forEach(button => {
-            button.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.open();
-            });
+            if (button) {
+                // Remove any existing event listeners
+                const newButton = button.cloneNode(true);
+                button.parentNode?.replaceChild(newButton, button);
+                
+                newButton.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('✅ Get Started button clicked');
+                    this.open();
+                }, { capture: true });
+                
+                // Ensure button is clickable
+                newButton.style.pointerEvents = 'auto';
+                newButton.style.cursor = 'pointer';
+                newButton.style.position = 'relative';
+                newButton.style.zIndex = '10';
+            }
         });
+
+        // Sign In button handler
+        if (this.signInBtn) {
+            // Remove any existing event listeners
+            const newSignInBtn = this.signInBtn.cloneNode(true);
+            this.signInBtn.parentNode?.replaceChild(newSignInBtn, this.signInBtn);
+            this.signInBtn = newSignInBtn; // Update reference
+            
+            newSignInBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log('✅ Sign In button clicked');
+                this.openSignIn();
+            }, { capture: true });
+            
+            // Ensure button is clickable
+            newSignInBtn.style.pointerEvents = 'auto';
+            newSignInBtn.style.cursor = 'pointer';
+            newSignInBtn.style.position = 'relative';
+            newSignInBtn.style.zIndex = '10';
+        }
 
         // Close modal handlers
         this.closeBtn?.addEventListener('click', () => this.close());
@@ -305,10 +359,23 @@ class SearchModal {
             this.closeProfileDetail();
         });
 
-        // Age verification checkbox
-        this.ageVerification?.addEventListener('change', (e) => {
-            if (this.openIMessageBtn) {
-                this.openIMessageBtn.disabled = !e.target.checked;
+        // Format phone number input - only allow digits
+        this.profilePhoneNumberInput?.addEventListener('input', (e) => {
+            let value = e.target.value.replace(/\D/g, '');
+            if (value.length > 10) {
+                value = value.slice(0, 10);
+            }
+            e.target.value = value;
+        });
+
+        // Allow Enter key in phone number input
+        this.profilePhoneNumberInput?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.openIMessage();
+            }
+            // Only allow digits
+            if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'Tab', 'Enter'].includes(e.key)) {
+                e.preventDefault();
             }
         });
 
@@ -318,23 +385,37 @@ class SearchModal {
         });
 
         // Manual URL handlers
-        this.cancelUrlBtn?.addEventListener('click', () => {
+        this.cancelUrlBtn?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
             this.hideManualUrlInput();
         });
 
-        this.searchUrlBtn?.addEventListener('click', () => {
-            this.handleManualUrlSearch();
+        this.searchUrlBtn?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('🔘 Search URL button clicked');
+            if (!this.searchUrlBtn.disabled) {
+                this.handleManualUrlSearch();
+            } else {
+                console.warn('⚠️ Search URL button is disabled');
+            }
         });
 
         // Allow Enter key in URL input
         this.linkedinUrlInput?.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter' && !this.searchUrlBtn.disabled) {
-                this.handleManualUrlSearch();
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (!this.searchUrlBtn?.disabled) {
+                    console.log('🔘 Enter key pressed in URL input');
+                    this.handleManualUrlSearch();
+                } else {
+                    console.warn('⚠️ Search URL button is disabled');
+                }
             }
         });
 
-        // Sign In modal handlers
-        this.signInBtn?.addEventListener('click', () => this.openSignIn());
+        // Sign In modal handlers (Sign In button handler moved to init() to avoid duplicate)
         this.closeSignInModal?.addEventListener('click', () => this.closeSignIn());
         this.cancelSignInBtn?.addEventListener('click', () => this.closeSignIn());
         this.submitSignInBtn?.addEventListener('click', () => this.handleSignIn());
@@ -391,9 +472,141 @@ class SearchModal {
             this.validateUrlInput();
         });
 
+        // Prevent browser extension interference with LinkedIn URL input
+        if (this.linkedinUrlInput) {
+            try {
+                Object.defineProperty(this.linkedinUrlInput, 'control', {
+                    value: null,
+                    writable: true,
+                    configurable: true
+                });
+            } catch (e) {
+                // Ignore if property can't be defined
+            }
+        }
+
         // Persistent "Profile not found" button
         this.showManualUrlBtnPersistent?.addEventListener('click', () => {
             this.showManualUrlInput();
+        });
+
+        // Create Manually button and modal handlers
+        this.createManuallyBtn?.addEventListener('click', () => {
+            this.openCreateManually();
+        });
+        this.closeCreateManuallyModal?.addEventListener('click', () => {
+            this.closeCreateManually();
+        });
+        this.cancelCreateManuallyBtn?.addEventListener('click', () => {
+            this.closeCreateManually();
+        });
+        // Protect button from browser extension interference
+        if (this.submitCreateManuallyBtn) {
+            // Define control property on button to prevent extension errors
+            try {
+                Object.defineProperty(this.submitCreateManuallyBtn, 'control', {
+                    value: null,
+                    writable: true,
+                    configurable: true,
+                    enumerable: false
+                });
+            } catch (e) {
+                // Ignore
+            }
+            
+            this.submitCreateManuallyBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                e.stopImmediatePropagation();
+                console.log('🔘 Create Profile button clicked');
+                this.handleCreateManually();
+            }, { capture: true });
+        }
+
+        // Close create manually modal on overlay click
+        this.createManuallyModal?.addEventListener('click', (e) => {
+            if (e.target === this.createManuallyModal) {
+                this.closeCreateManually();
+            }
+        });
+
+        // Format phone number input - only allow digits
+        this.manualPhoneNumberInput?.addEventListener('input', (e) => {
+            let value = e.target.value.replace(/\D/g, '');
+            if (value.length > 10) {
+                value = value.slice(0, 10);
+            }
+            e.target.value = value;
+        });
+
+        // Allow Enter key in form inputs
+        [this.firstNameInput, this.lastNameInput, this.bioInput, this.manualPhoneNumberInput].forEach(input => {
+            input?.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (input === this.manualPhoneNumberInput) {
+                        this.handleCreateManually();
+                    }
+                }
+            });
+        });
+    }
+
+    protectInputsFromExtensions() {
+        // Protect all input fields from browser extension interference
+        const inputs = [
+            this.input,
+            this.linkedinUrlInput,
+            this.phoneNumberInput,
+            this.profilePhoneNumberInput,
+            this.firstNameInput,
+            this.lastNameInput,
+            this.bioInput,
+            this.manualPhoneNumberInput,
+            this.messageText
+        ];
+
+        inputs.forEach(input => {
+            if (input) {
+                try {
+                    // Define control property to prevent extension errors
+                    Object.defineProperty(input, 'control', {
+                        value: null,
+                        writable: true,
+                        configurable: true
+                    });
+                } catch (e) {
+                    // Ignore if property can't be defined
+                }
+            }
+        });
+
+        // Also protect inputs that might be added dynamically
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                mutation.addedNodes.forEach((node) => {
+                    if (node.nodeType === 1) { // Element node
+                        const inputs = node.querySelectorAll ? node.querySelectorAll('input, textarea') : [];
+                        inputs.forEach(input => {
+                            try {
+                                Object.defineProperty(input, 'control', {
+                                    value: null,
+                                    writable: true,
+                                    configurable: true
+                                });
+                            } catch (e) {
+                                // Ignore
+                            }
+                        });
+                    }
+                });
+            });
+        });
+
+        // Observe the document for new inputs
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
         });
     }
 
@@ -403,7 +616,33 @@ class SearchModal {
             setTimeout(() => {
                 this.manualUrlContainer.classList.add('active');
                 if (this.linkedinUrlInput) {
-                    this.linkedinUrlInput.focus();
+                    // Ensure input is enabled and clickable
+                    this.linkedinUrlInput.disabled = false;
+                    this.linkedinUrlInput.readOnly = false;
+                    this.linkedinUrlInput.style.pointerEvents = 'auto';
+                    this.linkedinUrlInput.style.cursor = 'text';
+                    this.linkedinUrlInput.style.opacity = '1';
+                    this.linkedinUrlInput.removeAttribute('readonly');
+                    
+                    // Prevent extension interference
+                    try {
+                        Object.defineProperty(this.linkedinUrlInput, 'control', {
+                            value: null,
+                            writable: true,
+                            configurable: true
+                        });
+                    } catch (e) {
+                        // Ignore if property can't be defined
+                    }
+                    
+                    // Focus the input
+                    try {
+                        this.linkedinUrlInput.focus();
+                        this.linkedinUrlInput.click();
+                    } catch (e) {
+                        // Ignore focus errors from browser extensions
+                        console.log('Focus handled, extension interference prevented');
+                    }
                 }
             }, 10);
         }
@@ -423,18 +662,27 @@ class SearchModal {
 
     validateUrlInput() {
         const url = this.linkedinUrlInput?.value.trim() || '';
-        const isValid = url.length > 0 && (url.includes('linkedin.com') || url.includes('linkedin.com/in/'));
+        // More flexible validation - just check if it contains linkedin
+        const isValid = url.length > 0 && url.toLowerCase().includes('linkedin');
         
         if (this.searchUrlBtn) {
             this.searchUrlBtn.disabled = !isValid;
         }
+        
+        console.log('URL validation:', { url, isValid });
     }
 
     async handleManualUrlSearch() {
         const url = this.linkedinUrlInput?.value.trim();
-        if (!url || !url.includes('linkedin.com')) {
+        if (!url || !url.toLowerCase().includes('linkedin')) {
+            this.showError('Please enter a valid LinkedIn URL');
+            if (this.linkedinUrlInput) {
+                this.linkedinUrlInput.focus();
+            }
             return;
         }
+        
+        console.log('🔍 Starting manual URL search for:', url);
 
         // Hide manual URL input
         this.hideManualUrlInput();
@@ -450,9 +698,6 @@ class SearchModal {
             this.resultCard.innerHTML = '';
             this.resultCard.appendChild(this.resultLoading);
         }
-        
-        // Ensure manual URL input is hidden
-        this.hideManualUrlInput();
 
         // Disable search button
         if (this.searchUrlBtn) {
@@ -461,10 +706,11 @@ class SearchModal {
         }
 
         try {
-            // Search for the LinkedIn URL directly
-            const query = url;
+            console.log('Searching LinkedIn URL via HasData API:', url);
 
-            console.log('Searching for LinkedIn URL:', query);
+            // Use the same HasData API as regular profile search
+            // Build query: linkedin {url} to search for the URL
+            const query = `linkedin ${url}`;
 
             const options = {
                 method: 'GET',
@@ -477,32 +723,113 @@ class SearchModal {
                 },
                 headers: {
                     'x-api-key': this.apiKey,
-                    'Content-Type': 'application/json'
-                }
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                timeout: 30000 // 30 second timeout
             };
+
+            console.log('API Request Options:', {
+                url: options.url,
+                params: options.params,
+                headers: { ...options.headers, 'x-api-key': '***hidden***' }
+            });
 
             const response = await axios.request(options);
             const data = response.data;
 
-            console.log('Full API Response:', data);
+            console.log('HasData API Response for LinkedIn URL:', data);
+            console.log('Response Status:', response.status);
+
+            // Check if we got data
+            if (!data) {
+                throw new Error('No data received from API');
+            }
+
+            // Save search data to Firebase (with manual_url flag)
+            try {
+                // Override the input value temporarily for saveLinkedInSearchData
+                const originalInputValue = this.input?.value;
+                if (this.input) {
+                    this.input.value = url; // Temporarily set for Firebase save
+                }
+                
+                const searchData = {
+                    ...data,
+                    query: url,
+                    searchType: 'manual_url',
+                    originalQuery: query,
+                    timestamp: new Date().toISOString()
+                };
+                
+                // Save with custom data
+                if (window.firebase && window.firebase.db) {
+                    const { collection, addDoc, serverTimestamp } = window.firebase;
+                    const searchDoc = {
+                        searchQuery: url,
+                        searchData: searchData,
+                        searchType: 'manual_url',
+                        timestamp: serverTimestamp(),
+                        createdAt: new Date().toISOString(),
+                        type: 'linkedin_search_all'
+                    };
+                    await addDoc(collection(window.firebase.db, 'linkedin_searches'), searchDoc);
+                    console.log('✅ LinkedIn URL search saved to Firebase');
+                }
+                
+                // Restore original input value
+                if (this.input) {
+                    this.input.value = originalInputValue || '';
+                }
+            } catch (firebaseError) {
+                console.error('Error saving LinkedIn URL search to Firebase:', firebaseError);
+                // Continue even if Firebase save fails
+            }
 
             // Check if this is a URL search response with organicResults
+            console.log('📊 Processing API response data...');
+            console.log('Data keys:', Object.keys(data || {}));
+            console.log('Has organicResults?', !!data?.organicResults);
+            console.log('Has organic_results?', !!data?.organic_results);
+            
             if (data?.organicResults && Array.isArray(data.organicResults) && data.organicResults.length > 0) {
+                console.log('✅ Found organicResults, displaying:', data.organicResults.length, 'results');
                 // Display organic results in simple list format
-                this.displayOrganicResults(data.organicResults);
+                await this.displayOrganicResults(data.organicResults);
+            } else if (data?.organic_results && Array.isArray(data.organic_results) && data.organic_results.length > 0) {
+                console.log('✅ Found organic_results, displaying:', data.organic_results.length, 'results');
+                // Alternative format: organic_results
+                await this.displayOrganicResults(data.organic_results);
             } else {
+                console.log('📋 No organic results found, using displayResult');
+                console.log('Data structure:', Object.keys(data || {}));
                 // Process and display results (for regular name search)
-                this.displayResult(data);
+                // This will handle inline_images and other result formats
+                await this.displayResult(data);
             }
 
         } catch (error) {
             console.error('Error searching LinkedIn URL:', error);
-            let errorMessage = 'Failed to search. Please try again.';
+            console.error('Error details:', {
+                message: error.message,
+                response: error.response?.data,
+                status: error.response?.status,
+                statusText: error.response?.statusText
+            });
+            
+            let errorMessage = 'Failed to search LinkedIn URL. Please try again.';
             
             if (error.response) {
-                errorMessage = `Error: ${error.response.status} - ${error.response.statusText}`;
+                // Server responded with error
+                errorMessage = error.response.data?.message 
+                    || error.response.data?.error 
+                    || `Server error: ${error.response.status} ${error.response.statusText}`;
             } else if (error.request) {
-                errorMessage = 'Network error. Please check your connection.';
+                // Request made but no response
+                errorMessage = 'No response from server. Please check your connection.';
+            } else {
+                // Error setting up request
+                errorMessage = error.message || 'Failed to search LinkedIn URL. Please try again.';
             }
             
             this.showError(errorMessage);
@@ -514,7 +841,7 @@ class SearchModal {
         }
     }
 
-    showProfileDetail(profile) {
+    async showProfileDetail(profile) {
         this.selectedProfile = profile;
         
         if (!this.profileDetailContainer) return;
@@ -526,6 +853,13 @@ class SearchModal {
 
         if (this.profileDetailLink && profile.link) {
             this.profileDetailLink.href = profile.link;
+        }
+
+        // Save selected user profile to Firebase
+        try {
+            await this.saveUserProfile(profile);
+        } catch (error) {
+            console.error('Error saving user profile to Firebase:', error);
         }
 
         // Set thumbnail
@@ -552,12 +886,9 @@ class SearchModal {
             }
         }
 
-        // Reset checkbox
-        if (this.ageVerification) {
-            this.ageVerification.checked = false;
-        }
-        if (this.openIMessageBtn) {
-            this.openIMessageBtn.disabled = true;
+        // Reset phone number input
+        if (this.profilePhoneNumberInput) {
+            this.profilePhoneNumberInput.value = '';
         }
 
         // Show profile detail
@@ -577,20 +908,51 @@ class SearchModal {
         this.selectedProfile = null;
     }
 
-    openIMessage() {
-        if (!this.ageVerification?.checked) {
-            return;
-        }
-
+    async openIMessage() {
+        console.log('🔵 openIMessage called');
+        
         if (!this.selectedProfile) {
             console.error('No profile selected');
+            alert('No profile selected. Please try again.');
             return;
         }
 
-        const phoneNumber = '+16463458837';
+        // Get and validate phone number
+        let phoneNumber = this.profilePhoneNumberInput?.value.trim();
         
+        if (!phoneNumber) {
+            alert('Please enter your phone number for verification');
+            if (this.profilePhoneNumberInput) {
+                this.profilePhoneNumberInput.focus();
+            }
+            return;
+        }
+
+        // Remove any non-digit characters
+        phoneNumber = phoneNumber.replace(/\D/g, '');
+        
+        // Validate 10 digits
+        if (phoneNumber.length !== 10) {
+            alert('Please enter a valid 10-digit phone number');
+            if (this.profilePhoneNumberInput) {
+                this.profilePhoneNumberInput.focus();
+            }
+            return;
+        }
+
+        // Format as E.164: +1 + 10 digits
+        const formattedPhone = `+1${phoneNumber}`;
+        console.log('✅ Phone number validated:', formattedPhone);
+
+        // Save phone number to Firebase (don't wait for it to complete)
+        this.saveUserPhoneNumber(formattedPhone).then(() => {
+            console.log('✅ Phone number saved to Firebase:', formattedPhone);
+        }).catch(error => {
+            console.error('Error saving phone number to Firebase:', error);
+            // Continue even if save fails
+        });
+
         // Extract user name from profile
-        // Try to get name from title (e.g., "John Doe - Software Engineer" -> "John Doe")
         let userName = this.selectedProfile.title || 'there';
         
         // Clean up the name - remove common suffixes like " - ", " | ", " at ", etc.
@@ -612,19 +974,99 @@ class SearchModal {
             userName = 'there';
         }
         
-        const message = `Hey, its ${userName} here, looking for great social connection`;
+        // Use Kafka phone number as the default recipient
+        const kafkaPhoneNumber = this.kafkaPhoneNumber;
+        const message = `Hey, I am ${userName}, feels lucky to be here.`;
+        
+        console.log('📱 Preparing to open iMessage...');
+        console.log('   Recipient (Kafka phone):', kafkaPhoneNumber);
+        console.log('   Message:', message);
         
         // Create iMessage/SMS URL (works on iOS/macOS)
         // Format: sms:+1234567890&body=message
-        const imessageUrl = `sms:${phoneNumber}&body=${encodeURIComponent(message)}`;
+        // Opens iMessage to the Kafka phone number by default
+        const imessageUrl = `sms:${kafkaPhoneNumber}&body=${encodeURIComponent(message)}`;
+        console.log('   URL:', imessageUrl);
         
-        // Try to open iMessage
+        // Close profile detail modal first (with small delay to ensure it closes)
+        this.closeProfileDetail();
+        
+        // Open iMessage after a short delay to ensure modal closes
+        setTimeout(() => {
+            try {
+                console.log('🚀 Opening iMessage...');
+                // Try multiple methods to ensure it works
+                window.location.href = imessageUrl;
+                
+                // Fallback: try opening in new window/tab
+                setTimeout(() => {
+                    try {
+                        window.open(imessageUrl, '_blank');
+                    } catch (e2) {
+                        console.error('Fallback open failed:', e2);
+                    }
+                }, 100);
+            } catch (e) {
+                console.error('Error opening iMessage:', e);
+                // Fallback: Show instructions
+                alert(`Please send this message to ${kafkaPhoneNumber}:\n\n${message}`);
+            }
+        }, 300);
+    }
+
+    // Save user phone number to Firebase
+    async saveUserPhoneNumber(phoneNumber) {
         try {
-            window.location.href = imessageUrl;
-        } catch (e) {
-            console.error('Error opening iMessage:', e);
-            // Fallback: Show instructions
-            alert(`Please send this message to ${phoneNumber}:\n\n${message}`);
+            if (!window.firebase || !window.firebase.db) {
+                console.warn('Firebase not initialized');
+                return;
+            }
+
+            if (!this.selectedProfile) {
+                console.warn('No profile selected');
+                return;
+            }
+
+            const { collection, addDoc, serverTimestamp } = window.firebase;
+            
+            // Extract user name from profile
+            let userName = this.selectedProfile.title || 'Unknown User';
+            
+            // Clean up the name
+            if (userName.includes(' - ')) {
+                userName = userName.split(' - ')[0].trim();
+            } else if (userName.includes(' | ')) {
+                userName = userName.split(' | ')[0].trim();
+            } else if (userName.includes(' at ')) {
+                userName = userName.split(' at ')[0].trim();
+            }
+            
+            if (userName.length > 50) {
+                userName = userName.split(',')[0].split('.')[0].trim();
+            }
+            
+            // Prepare phone number data
+            const phoneData = {
+                phoneNumber: phoneNumber,
+                userName: userName,
+                profileTitle: this.selectedProfile.title || 'Unknown',
+                profileLink: this.selectedProfile.link || '',
+                profileThumbnail: this.selectedProfile.thumbnail || '',
+                searchQuery: this.input?.value.trim() || 'Unknown',
+                profileData: this.selectedProfile,
+                timestamp: serverTimestamp(),
+                createdAt: new Date().toISOString(),
+                type: 'user_phone_verification'
+            };
+
+            // Save to 'users' collection
+            const docRef = await addDoc(collection(window.firebase.db, 'users'), phoneData);
+            console.log('✅ Phone number saved to users collection with ID:', docRef.id);
+            
+            return docRef.id;
+        } catch (error) {
+            console.error('Error saving phone number:', error);
+            throw error;
         }
     }
 
@@ -638,18 +1080,50 @@ class SearchModal {
                 this.resultContainer.style.display = 'none';
             }
             
+            // Ensure input is enabled and clickable immediately
+            if (this.input) {
+                this.input.disabled = false;
+                this.input.readOnly = false;
+                this.input.style.pointerEvents = 'auto';
+                this.input.style.cursor = 'text';
+                this.input.style.opacity = '1';
+                this.input.removeAttribute('readonly');
+            }
+            
             // Focus input after animation (with error handling for extensions)
             setTimeout(() => {
                 try {
                     if (this.input) {
-                        this.input.focus();
-                        this.input.style.cursor = 'text';
+                        // Double-check input is enabled
                         this.input.disabled = false;
+                        this.input.readOnly = false;
                         this.input.style.pointerEvents = 'auto';
+                        this.input.style.cursor = 'text';
+                        this.input.style.opacity = '1';
+                        this.input.removeAttribute('readonly');
+                        this.input.removeAttribute('autocomplete');
+                        this.input.setAttribute('autocomplete', 'off');
+                        this.input.setAttribute('data-lpignore', 'true');
+                        this.input.setAttribute('data-form-type', 'other');
+                        
+                        // Prevent extension interference
+                        try {
+                            Object.defineProperty(this.input, 'control', {
+                                value: null,
+                                writable: true,
+                                configurable: true
+                            });
+                        } catch (e) {
+                            // Ignore if property can't be defined
+                        }
+                        
+                        // Focus and select if there's existing text
+                        this.input.focus();
+                        this.input.click(); // Ensure it's clickable
                     }
                 } catch (e) {
                     // Ignore focus errors from browser extensions
-                    console.log('Focus handled');
+                    console.log('Focus handled, extension interference prevented');
                 }
             }, 400);
         }
@@ -788,7 +1262,7 @@ class SearchModal {
         }
     }
 
-    displayResult(data) {
+    async displayResult(data) {
         if (!this.resultCard) return;
 
         // Hide loading
@@ -798,6 +1272,13 @@ class SearchModal {
 
         console.log('Processing data:', data);
         console.log('Full API Response:', JSON.stringify(data, null, 2));
+
+        // Save all LinkedIn search data to Firebase
+        try {
+            await this.saveLinkedInSearchData(data);
+        } catch (error) {
+            console.error('Error saving LinkedIn search data to Firebase:', error);
+        }
 
         // Extract inline images from the response
         let inlineImages = [];
@@ -929,7 +1410,7 @@ class SearchModal {
         this.createDropdownPreview(uniqueImages);
     }
 
-    displayOrganicResults(organicResults) {
+    async displayOrganicResults(organicResults) {
         if (!organicResults || !Array.isArray(organicResults) || organicResults.length === 0) {
             this.showError('No results found.');
             return;
@@ -938,6 +1419,13 @@ class SearchModal {
         // Hide loading state
         if (this.resultLoading) {
             this.resultLoading.style.display = 'none';
+        }
+
+        // Save all organic results to Firebase
+        try {
+            await this.saveLinkedInSearchData({ organicResults: organicResults });
+        } catch (error) {
+            console.error('Error saving organic results to Firebase:', error);
         }
 
         // Create simple list format
@@ -1124,7 +1612,7 @@ class SearchModal {
 
     // Detect API server URL by trying common ports
     async detectApiServerUrl() {
-        const commonPorts = [3000, 8080, 5000];
+        const commonPorts = [8000, 3000, 8080, 5000];
         const baseUrl = window.location.origin.includes('localhost') 
             ? 'http://localhost' 
             : window.location.origin;
@@ -1154,8 +1642,8 @@ class SearchModal {
         }
         
         // Default fallback
-        console.warn('⚠️ Could not detect API server, using default port 3000');
-        return 'http://localhost:3000';
+        console.warn('⚠️ Could not detect API server, using default port 8000');
+        return 'http://localhost:8000';
     }
 
     // Sign In functionality
@@ -1254,73 +1742,138 @@ class SearchModal {
         this.submitSignInBtn.disabled = true;
 
         try {
-            // Check if phone number exists in chats
-            console.log('Checking phone number:', formattedPhone);
-            const checkResponse = await axios.get(`${this.apiBaseUrl}/api/chats`, {
-                params: {
-                    phone_number: formattedPhone
-                }
-            });
-
-            console.log('API Response:', checkResponse.data);
-
-            // Handle different response structures
-            let chats = [];
+            // First, check if phone number exists in Firestore users collection
+            console.log('Checking phone number in Firestore users collection:', formattedPhone);
             
-            // Try multiple response structures
-            if (checkResponse.data?.data) {
-                if (Array.isArray(checkResponse.data.data)) {
-                    chats = checkResponse.data.data;
-                } else if (checkResponse.data.data.chats && Array.isArray(checkResponse.data.data.chats)) {
-                    chats = checkResponse.data.data.chats;
-                } else if (checkResponse.data.data.id) {
-                    // Single chat object
-                    chats = [checkResponse.data.data];
-                } else if (typeof checkResponse.data.data === 'object') {
-                    // Might be a single chat object
-                    chats = [checkResponse.data.data];
-                }
-            }
-            
-            // Also check direct response
-            if (chats.length === 0 && checkResponse.data?.chats) {
-                chats = Array.isArray(checkResponse.data.chats) ? checkResponse.data.chats : [checkResponse.data.chats];
-            }
-            
-            // Check if response.data itself is an array
-            if (chats.length === 0 && Array.isArray(checkResponse.data)) {
-                chats = checkResponse.data;
+            if (!window.firebase || !window.firebase.db) {
+                throw new Error('Firebase not initialized');
             }
 
-            console.log('Parsed chats:', chats);
+            const { collection, query, where, getDocs } = window.firebase;
             
-            if (chats.length > 0) {
-                // Phone number exists - send welcome message and open iMessage
-                const chat = chats[0];
-                this.currentChatId = chat.id || chat.chat_id;
-                this.currentPhoneNumber = formattedPhone;
+            // Query Firestore for users with this phone number
+            const usersRef = collection(window.firebase.db, 'users');
+            const q = query(usersRef, where('phoneNumber', '==', formattedPhone));
+            const querySnapshot = await getDocs(q);
+
+            console.log('Firestore query result:', querySnapshot.size, 'documents found');
+
+            if (!querySnapshot.empty) {
+                // Phone number exists in Firestore - navigate to matching page
+                console.log('✅ Phone number found in Firestore, navigating to matching page');
                 
-                console.log('Found chat:', chat);
-                console.log('Chat ID:', this.currentChatId);
+                // Get the first matching user document
+                const userDoc = querySnapshot.docs[0];
+                const userData = userDoc.data();
                 
-                // Send welcome message automatically
-                const messageSent = await this.sendWelcomeMessage(formattedPhone);
+                console.log('📦 Storing in sessionStorage:', {
+                    phoneNumber: formattedPhone,
+                    hasUserData: !!userData,
+                    userId: userDoc.id
+                });
+                
+                // Store phone number and user data in sessionStorage for matching page
+                sessionStorage.setItem('phoneNumber', formattedPhone);
+                sessionStorage.setItem('userData', JSON.stringify({
+                    id: userDoc.id,
+                    ...userData
+                }));
+                
+                // Verify storage
+                const storedPhone = sessionStorage.getItem('phoneNumber');
+                const storedData = sessionStorage.getItem('userData');
+                console.log('✅ Verified sessionStorage:', {
+                    phoneStored: storedPhone === formattedPhone,
+                    dataStored: !!storedData
+                });
                 
                 // Close sign-in modal
                 this.closeSignIn();
                 
-                // Open iMessage app
-                if (messageSent) {
-                    setTimeout(() => {
-                        this.openIMessageApp();
-                    }, 500);
-                } else {
-                    // Still open iMessage even if message send failed
-                    setTimeout(() => {
-                        this.openIMessageApp();
-                    }, 500);
-                }
+                // Small delay to ensure modal closes
+                setTimeout(() => {
+                    console.log('🚀 Navigating to /matching...');
+                    window.location.href = '/matching';
+                }, 100);
+                return;
             } else {
+                // Phone number not found in Firestore - show error
+                console.log('❌ Phone number not found in Firestore');
+                console.log('   Searched for:', formattedPhone);
+                this.showSignInMessage('Phone number not found. Please check your number or create a profile first.', true);
+            }
+        } catch (error) {
+            console.error('Sign in error:', error);
+            
+            // Fallback: try checking in chats API
+            try {
+                console.log('Kafka check failed, trying chats API...');
+                const checkResponse = await axios.get(`${this.apiBaseUrl}/api/chats`, {
+                    params: {
+                        phone_number: formattedPhone
+                    }
+                });
+
+                console.log('API Response:', checkResponse.data);
+
+                // Handle different response structures
+                let chats = [];
+                
+                // Try multiple response structures
+                if (checkResponse.data?.data) {
+                    if (Array.isArray(checkResponse.data.data)) {
+                        chats = checkResponse.data.data;
+                    } else if (checkResponse.data.data.chats && Array.isArray(checkResponse.data.data.chats)) {
+                        chats = checkResponse.data.data.chats;
+                    } else if (checkResponse.data.data.id) {
+                        // Single chat object
+                        chats = [checkResponse.data.data];
+                    } else if (typeof checkResponse.data.data === 'object') {
+                        // Might be a single chat object
+                        chats = [checkResponse.data.data];
+                    }
+                }
+                
+                // Also check direct response
+                if (chats.length === 0 && checkResponse.data?.chats) {
+                    chats = Array.isArray(checkResponse.data.chats) ? checkResponse.data.chats : [checkResponse.data.chats];
+                }
+                
+                // Check if response.data itself is an array
+                if (chats.length === 0 && Array.isArray(checkResponse.data)) {
+                    chats = checkResponse.data;
+                }
+
+                console.log('Parsed chats:', chats);
+                
+                if (chats.length > 0) {
+                    // Phone number exists - send welcome message and open iMessage
+                    const chat = chats[0];
+                    this.currentChatId = chat.id || chat.chat_id;
+                    this.currentPhoneNumber = formattedPhone;
+                    
+                    console.log('Found chat:', chat);
+                    console.log('Chat ID:', this.currentChatId);
+                    
+                    // Send welcome message automatically
+                    const messageSent = await this.sendWelcomeMessage(formattedPhone);
+                    
+                    // Close sign-in modal
+                    this.closeSignIn();
+                    
+                    // Open iMessage app
+                    if (messageSent) {
+                        setTimeout(() => {
+                            this.openIMessageApp();
+                        }, 500);
+                    } else {
+                        // Still open iMessage even if message send failed
+                        setTimeout(() => {
+                            this.openIMessageApp();
+                        }, 500);
+                    }
+                    return;
+                } else {
                 // Phone number doesn't exist in first check - try alternative endpoints
                 console.log('No chats found in first check, trying alternative methods...');
                 
@@ -1448,7 +2001,7 @@ class SearchModal {
                         // No chats exist, create a new one
                         console.log('No existing chats found, creating new chat for:', formattedPhone);
                         const createResponse = await axios.post(`${this.apiBaseUrl}/api/chats`, {
-                            send_from: '+16463458837',
+                            send_from: this.kafkaPhoneNumber,
                             chat: {
                                 phone_numbers: [formattedPhone]
                             },
@@ -1482,11 +2035,12 @@ class SearchModal {
                 
                 // Final fallback - show error
                 this.showSignInMessage('Unable to find or create chat. Please try again.', true);
+                }
+            } catch (fallbackError) {
+                console.error('Fallback sign in error:', fallbackError);
+                const errorMessage = fallbackError.response?.data?.message || fallbackError.message || 'An error occurred. Please try again.';
+                this.showSignInMessage(errorMessage, true);
             }
-        } catch (error) {
-            console.error('Sign in error:', error);
-            const errorMessage = error.response?.data?.message || error.message || 'An error occurred. Please try again.';
-            this.showSignInMessage(errorMessage, true);
         } finally {
             this.submitSignInBtn.disabled = false;
         }
@@ -1497,7 +2051,7 @@ class SearchModal {
         if (this.messageBoxModal) {
             // Set phone number display
             if (this.messageBoxPhoneNumber) {
-                this.messageBoxPhoneNumber.textContent = phoneNumber || '+16463458837';
+                this.messageBoxPhoneNumber.textContent = phoneNumber || this.kafkaPhoneNumber;
             }
             
             this.messageBoxModal.style.display = 'flex';
@@ -1605,21 +2159,377 @@ class SearchModal {
     }
 
     openIMessageApp() {
-        // Open iMessage with the sender number (+16463458837)
-        const senderNumber = '+16463458837';
+        // Open iMessage with the Kafka phone number (default recipient)
+        const kafkaPhoneNumber = this.kafkaPhoneNumber;
         
         // Create iMessage/SMS URL
         // Format: sms:+1234567890
-        const imessageUrl = `sms:${senderNumber}`;
+        // Opens iMessage to the Kafka phone number by default
+        const imessageUrl = `sms:${kafkaPhoneNumber}`;
         
         try {
             // Try to open iMessage
             window.location.href = imessageUrl;
-            console.log('📱 Opening iMessage with sender number:', senderNumber);
+            console.log('📱 Opening iMessage to Kafka phone number:', kafkaPhoneNumber);
         } catch (error) {
             console.error('Error opening iMessage:', error);
             // Fallback: Show instructions
-            alert(`Please open iMessage and send a message to ${senderNumber}`);
+            alert(`Please open iMessage and send a message to ${kafkaPhoneNumber}`);
+        }
+    }
+
+    // Save LinkedIn search data to Firebase (all results)
+    async saveLinkedInSearchData(data) {
+        try {
+            if (!window.firebase || !window.firebase.db) {
+                console.warn('Firebase not initialized');
+                return;
+            }
+
+            const { collection, addDoc, serverTimestamp } = window.firebase;
+            
+            // Extract search query from input
+            const searchQuery = this.input?.value.trim() || 'Unknown';
+            
+            // Prepare document data
+            const searchData = {
+                searchQuery: searchQuery,
+                searchData: data,
+                timestamp: serverTimestamp(),
+                createdAt: new Date().toISOString(),
+                type: 'linkedin_search_all'
+            };
+
+            // Save to 'linkedin_searches' collection
+            const docRef = await addDoc(collection(window.firebase.db, 'linkedin_searches'), searchData);
+            console.log('✅ LinkedIn search data saved to Firebase with ID:', docRef.id);
+            
+            return docRef.id;
+        } catch (error) {
+            console.error('Error saving LinkedIn search data:', error);
+            throw error;
+        }
+    }
+
+    // Save selected user profile to Firebase (user's info)
+    async saveUserProfile(profile) {
+        try {
+            if (!window.firebase || !window.firebase.db) {
+                console.warn('Firebase not initialized');
+                return;
+            }
+
+            const { collection, addDoc, serverTimestamp } = window.firebase;
+            
+            // Extract user name from profile title
+            let userName = profile.title || 'Unknown User';
+            
+            // Clean up the name - remove common suffixes
+            if (userName.includes(' - ')) {
+                userName = userName.split(' - ')[0].trim();
+            } else if (userName.includes(' | ')) {
+                userName = userName.split(' | ')[0].trim();
+            } else if (userName.includes(' at ')) {
+                userName = userName.split(' at ')[0].trim();
+            }
+            
+            // If we still have a long title, try to extract just the first part (name)
+            if (userName.length > 50) {
+                userName = userName.split(',')[0].split('.')[0].trim();
+            }
+            
+            // Prepare user profile data
+            const userProfileData = {
+                userName: userName,
+                profileTitle: profile.title || 'Unknown',
+                profileLink: profile.link || '',
+                thumbnail: profile.thumbnail || '',
+                searchQuery: this.input?.value.trim() || 'Unknown',
+                profileData: profile,
+                timestamp: serverTimestamp(),
+                createdAt: new Date().toISOString(),
+                type: 'linkedin_user_profile'
+            };
+
+            // Save to 'linkedin_users' collection
+            const linkedinDocRef = await addDoc(collection(window.firebase.db, 'linkedin_users'), userProfileData);
+            console.log('✅ User profile saved to linkedin_users collection with ID:', linkedinDocRef.id);
+            
+            // Also save to 'users' collection
+            const userDocRef = await addDoc(collection(window.firebase.db, 'users'), userProfileData);
+            console.log('✅ User profile saved to users collection with ID:', userDocRef.id);
+            console.log('✅ User name saved:', userName);
+            
+            return { linkedinDocId: linkedinDocRef.id, userDocId: userDocRef.id };
+        } catch (error) {
+            console.error('Error saving user profile:', error);
+            throw error;
+        }
+    }
+
+    // Create Manually functionality
+    openCreateManually() {
+        if (this.createManuallyModal) {
+            this.createManuallyModal.style.display = 'flex';
+            setTimeout(() => {
+                this.createManuallyModal.classList.add('active');
+            }, 10);
+            
+            // Protect all inputs in the modal from browser extensions
+            const modalInputs = [
+                this.firstNameInput,
+                this.lastNameInput,
+                this.bioInput,
+                this.manualPhoneNumberInput
+            ];
+            
+            modalInputs.forEach(input => {
+                if (input) {
+                    try {
+                        Object.defineProperty(input, 'control', {
+                            value: null,
+                            writable: true,
+                            configurable: true,
+                            enumerable: false
+                        });
+                    } catch (e) {
+                        // Ignore
+                    }
+                }
+            });
+            
+            // Protect the submit button
+            if (this.submitCreateManuallyBtn) {
+                try {
+                    Object.defineProperty(this.submitCreateManuallyBtn, 'control', {
+                        value: null,
+                        writable: true,
+                        configurable: true,
+                        enumerable: false
+                    });
+                } catch (e) {
+                    // Ignore
+                }
+            }
+            
+            // Focus on first name input
+            setTimeout(() => {
+                this.firstNameInput?.focus();
+            }, 100);
+        }
+    }
+
+    closeCreateManually() {
+        if (this.createManuallyModal) {
+            this.createManuallyModal.classList.remove('active');
+            setTimeout(() => {
+                this.createManuallyModal.style.display = 'none';
+                // Reset form
+                if (this.firstNameInput) this.firstNameInput.value = '';
+                if (this.lastNameInput) this.lastNameInput.value = '';
+                if (this.bioInput) this.bioInput.value = '';
+                if (this.manualPhoneNumberInput) this.manualPhoneNumberInput.value = '';
+                this.hideCreateManuallyStatus();
+            }, 300);
+        }
+    }
+
+    hideCreateManuallyStatus() {
+        if (this.createManuallyStatus) {
+            this.createManuallyStatus.style.display = 'none';
+        }
+        if (this.createManuallyLoading) {
+            this.createManuallyLoading.style.display = 'none';
+        }
+        if (this.createManuallyMessage) {
+            this.createManuallyMessage.style.display = 'none';
+            this.createManuallyMessage.textContent = '';
+        }
+    }
+
+    showCreateManuallyLoading() {
+        if (this.createManuallyStatus) {
+            this.createManuallyStatus.style.display = 'block';
+        }
+        if (this.createManuallyLoading) {
+            this.createManuallyLoading.style.display = 'flex';
+        }
+        if (this.createManuallyMessage) {
+            this.createManuallyMessage.style.display = 'none';
+        }
+    }
+
+    showCreateManuallyMessage(message, isError = false) {
+        if (this.createManuallyStatus) {
+            this.createManuallyStatus.style.display = 'block';
+        }
+        if (this.createManuallyLoading) {
+            this.createManuallyLoading.style.display = 'none';
+        }
+        if (this.createManuallyMessage) {
+            this.createManuallyMessage.style.display = 'block';
+            this.createManuallyMessage.textContent = message;
+            this.createManuallyMessage.style.background = isError 
+                ? 'rgba(255, 59, 48, 0.1)' 
+                : 'rgba(0, 122, 255, 0.1)';
+            this.createManuallyMessage.style.color = isError 
+                ? 'var(--system-red, #ff3b30)' 
+                : 'var(--system-blue)';
+        }
+    }
+
+    async handleCreateManually() {
+        const firstName = this.firstNameInput?.value.trim();
+        const lastName = this.lastNameInput?.value.trim();
+        const bio = this.bioInput?.value.trim();
+        let phoneNumber = this.manualPhoneNumberInput?.value.trim();
+
+        // Validate inputs
+        if (!firstName) {
+            this.showCreateManuallyMessage('Please enter your first name', true);
+            this.firstNameInput?.focus();
+            return;
+        }
+
+        if (!lastName) {
+            this.showCreateManuallyMessage('Please enter your last name', true);
+            this.lastNameInput?.focus();
+            return;
+        }
+
+        if (!phoneNumber) {
+            this.showCreateManuallyMessage('Please enter your phone number', true);
+            this.manualPhoneNumberInput?.focus();
+            return;
+        }
+
+        // Remove any non-digit characters
+        phoneNumber = phoneNumber.replace(/\D/g, '');
+        
+        // Validate 10 digits
+        if (phoneNumber.length !== 10) {
+            this.showCreateManuallyMessage('Please enter a valid 10-digit phone number', true);
+            this.manualPhoneNumberInput?.focus();
+            return;
+        }
+
+        // Format as E.164: +1 + 10 digits
+        const formattedPhone = `+1${phoneNumber}`;
+        const fullName = `${firstName} ${lastName}`;
+
+        this.showCreateManuallyLoading();
+        this.submitCreateManuallyBtn.disabled = true;
+
+        try {
+            // Save profile to Firebase
+            await this.saveManualProfileToFirebase({
+                firstName,
+                lastName,
+                fullName,
+                bio,
+                phoneNumber: formattedPhone
+            });
+
+            console.log('✅ Profile saved to Firebase');
+
+            // Close modals
+            this.closeCreateManually();
+            this.close();
+
+            // Open iMessage
+            setTimeout(() => {
+                this.openIMessageForManualProfile(fullName, formattedPhone);
+            }, 500);
+
+        } catch (error) {
+            console.error('Error creating manual profile:', error);
+            const errorMessage = error.message || 'An error occurred. Please try again.';
+            this.showCreateManuallyMessage(errorMessage, true);
+        } finally {
+            this.submitCreateManuallyBtn.disabled = false;
+        }
+    }
+
+    async saveManualProfileToFirebase(profileData) {
+        try {
+            console.log('🔵 saveManualProfileToFirebase called with:', profileData);
+            
+            if (!window.firebase || !window.firebase.db) {
+                console.error('❌ Firebase not initialized');
+                throw new Error('Firebase not initialized. Please refresh the page.');
+            }
+
+            const { collection, addDoc, serverTimestamp } = window.firebase;
+            
+            if (!collection || !addDoc || !serverTimestamp) {
+                console.error('❌ Firebase functions not available:', { collection: !!collection, addDoc: !!addDoc, serverTimestamp: !!serverTimestamp });
+                throw new Error('Firebase functions not available. Please refresh the page.');
+            }
+            
+            const profileDoc = {
+                firstName: profileData.firstName,
+                lastName: profileData.lastName,
+                fullName: profileData.fullName,
+                bio: profileData.bio || '',
+                phoneNumber: profileData.phoneNumber,
+                profileType: 'manual',
+                timestamp: serverTimestamp(),
+                createdAt: new Date().toISOString(),
+                type: 'manual_user_profile'
+            };
+
+            console.log('📝 Preparing to save document:', profileDoc);
+
+            // Save to 'users' collection in Firestore
+            const usersCollection = collection(window.firebase.db, 'users');
+            console.log('📦 Collection reference created');
+            
+            const docRef = await addDoc(usersCollection, profileDoc);
+            console.log('✅ Manual profile saved to Firestore');
+            console.log('   Collection: users');
+            console.log('   Document ID:', docRef.id);
+            console.log('   Data:', {
+                firstName: profileData.firstName,
+                lastName: profileData.lastName,
+                fullName: profileData.fullName,
+                phoneNumber: profileData.phoneNumber,
+                profileType: 'manual'
+            });
+            
+            return docRef.id;
+        } catch (error) {
+            console.error('❌ Error saving manual profile to Firebase:', error);
+            console.error('   Error name:', error.name);
+            console.error('   Error message:', error.message);
+            console.error('   Error stack:', error.stack);
+            console.error('   Collection: users');
+            
+            // Provide more helpful error messages
+            if (error.message.includes('permission') || error.message.includes('PERMISSION_DENIED')) {
+                throw new Error('Permission denied. Please check Firebase security rules.');
+            } else if (error.message.includes('network') || error.message.includes('Network')) {
+                throw new Error('Network error. Please check your internet connection.');
+            } else {
+                throw new Error(`Failed to save profile: ${error.message}`);
+            }
+        }
+    }
+
+    openIMessageForManualProfile(userName, phoneNumber) {
+        // Use Kafka phone number as the default recipient
+        const kafkaPhoneNumber = this.kafkaPhoneNumber;
+        const message = `Hey, I am ${userName}, feels lucky to be here.`;
+        
+        // Create iMessage/SMS URL
+        // Opens iMessage to the Kafka phone number by default
+        const imessageUrl = `sms:${kafkaPhoneNumber}&body=${encodeURIComponent(message)}`;
+        
+        try {
+            window.location.href = imessageUrl;
+            console.log('📱 Opening iMessage for manual profile to Kafka number:', kafkaPhoneNumber);
+        } catch (error) {
+            console.error('Error opening iMessage:', error);
+            alert(`Please send this message to ${kafkaPhoneNumber}:\n\n${message}`);
         }
     }
 
@@ -1671,18 +2581,36 @@ class SearchModal {
 // Initialize modal when DOM is ready
 let searchModalInstance = null;
 document.addEventListener('DOMContentLoaded', async () => {
-    searchModalInstance = new SearchModal();
-    window.searchModalInstance = searchModalInstance; // Make it accessible globally for onclick handlers
-    
-    // Auto-detect API server URL
-    if (searchModalInstance.detectApiServerUrl) {
-        try {
-            const detectedUrl = await searchModalInstance.detectApiServerUrl();
-            searchModalInstance.apiBaseUrl = detectedUrl;
-            console.log(`🌐 API Server detected at: ${detectedUrl}`);
-        } catch (error) {
-            console.warn('⚠️ Could not auto-detect API server, using default:', searchModalInstance.apiBaseUrl);
+    // Wait a bit to ensure all elements are ready
+    setTimeout(() => {
+        searchModalInstance = new SearchModal();
+        window.searchModalInstance = searchModalInstance; // Make it accessible globally for onclick handlers
+        
+        // Ensure buttons are clickable
+        const getStartedBtn = document.querySelector('.hero-buttons .btn-primary');
+        const signInBtn = document.getElementById('signInBtn');
+        
+        if (getStartedBtn) {
+            getStartedBtn.style.pointerEvents = 'auto';
+            getStartedBtn.style.cursor = 'pointer';
+            console.log('✅ Get Started button initialized');
         }
-    }
+        
+        if (signInBtn) {
+            signInBtn.style.pointerEvents = 'auto';
+            signInBtn.style.cursor = 'pointer';
+            console.log('✅ Sign In button initialized');
+        }
+        
+        // Auto-detect API server URL
+        if (searchModalInstance.detectApiServerUrl) {
+            searchModalInstance.detectApiServerUrl().then(detectedUrl => {
+                searchModalInstance.apiBaseUrl = detectedUrl;
+                console.log(`🌐 API Server detected at: ${detectedUrl}`);
+            }).catch(error => {
+                console.warn('⚠️ Could not auto-detect API server, using default:', searchModalInstance.apiBaseUrl);
+            });
+        }
+    }, 100);
 });
 

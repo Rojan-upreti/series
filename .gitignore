@@ -9,6 +9,11 @@ yarn-error.log*
 .env.local
 .env.*.local
 
+# Firebase credentials
+firebase-service-account.json
+*-service-account.json
+**/firebase-service-account.json
+
 # OS files
 .DS_Store
 Thumbs.db

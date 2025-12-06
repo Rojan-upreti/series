@@ -193,6 +193,8 @@ main {
     align-items: center;
     justify-content: flex-start;
     flex-wrap: wrap;
+    position: relative;
+    z-index: 10;
 }
 
 .btn-primary {
@@ -207,6 +209,9 @@ main {
     transition: all 0.2s ease;
     font-family: inherit;
     letter-spacing: -0.022em;
+    position: relative;
+    z-index: 10;
+    pointer-events: auto;
 }
 
 .btn-primary:hover {
@@ -235,6 +240,9 @@ main {
     transition: all 0.2s ease;
     font-family: inherit;
     letter-spacing: -0.022em;
+    position: relative;
+    z-index: 10;
+    pointer-events: auto;
 }
 
 .btn-secondary:hover {
@@ -580,6 +588,7 @@ main {
     }
 }
 
+
 /* LinkedIn Modal Styles - Apple Inspired with Glowing Effects */
 .modal-overlay {
     position: fixed;
@@ -787,6 +796,8 @@ main {
     box-shadow: 
         0 1px 2px rgba(0, 0, 0, 0.04),
         inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    pointer-events: auto;
+    z-index: 10;
 }
 
 .input-wrapper::before {
@@ -838,6 +849,10 @@ main {
     letter-spacing: -0.01em;
     width: 100%;
     line-height: 1.4;
+    pointer-events: auto;
+    cursor: text;
+    z-index: 10;
+    position: relative;
 }
 
 .search-input::placeholder {
@@ -1740,9 +1755,33 @@ main {
     padding: var(--spacing-md) var(--spacing-3xl) var(--spacing-xl);
     display: flex;
     gap: var(--spacing-sm);
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
     border-top: 0.5px solid var(--border-color);
     background: rgba(255, 255, 255, 0.5);
+}
+
+.create-manually-link {
+    background: none;
+    border: none;
+    color: var(--system-blue);
+    font-size: 13px;
+    font-weight: 400;
+    text-decoration: underline;
+    cursor: pointer;
+    padding: 0;
+    margin: 0;
+    transition: color 0.2s ease;
+    font-family: inherit;
+}
+
+.create-manually-link:hover {
+    color: var(--system-blue-hover);
+    text-decoration: underline;
+}
+
+.create-manually-link:active {
+    opacity: 0.7;
 }
 
 .modal-footer .btn-secondary,
